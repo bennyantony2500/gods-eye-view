@@ -12,7 +12,7 @@ import {
   clampBloomIntensity,
   decodeBloomIntensity,
 } from './bloom.js';
-import { LOCATIONS, CITY_POIS, GLOBE_VIEW, flyToGlobeView, flyToPresetLocation, flyToPOI, searchAndFlyTo } from './locations.js';
+import { LOCATIONS, CITY_POIS, GLOBE_VIEW, findPoiByName, findPresetLocationByName, flyToGlobeView, flyToPresetLocation, flyToPOI, searchAndFlyTo } from './locations.js';
 import { locationMiniStatus } from './locationStatus.js';
 import { interruptCameraMotion } from './cameraVerbs.js';
 import {
@@ -2802,12 +2802,24 @@ export class StyleManager {
   }
 
   /** Settle only the search generation that still owns the shared input UI. */
-  _settleLocationSearchUi(generation) {
-    if (this._activeLocationSearchGeneration !== generation) return;
-    this._activeLocationSearchGeneration = null;
+  /**
+   * Clear and dismiss the search input, with no navigation bookkeeping.
+   *
+   * Split out so the curated-preset branch of the search handler can reuse it:
+   * that branch returns before opening a deferred generation, so it has none to
+   * settle, and calling _settleLocationSearchUi with a null generation to mean
+   * "just clear the box" would be a riddle rather than a call.
+   */
+  _dismissLocationSearchInput() {
     this._locationSearch?.classList.remove('searching', 'expanded');
     if (this._locationSearch) this._locationSearch.value = '';
     this._locationSearch?.blur();
+  }
+
+  _settleLocationSearchUi(generation) {
+    if (this._activeLocationSearchGeneration !== generation) return;
+    this._activeLocationSearchGeneration = null;
+    this._dismissLocationSearchInput();
   }
 
   /** Release every follow owner while preserving Contact and vessel selection. */
@@ -9301,6 +9313,35 @@ export class StyleManager {
       if (e.key === 'Enter') {
         const query = this._locationSearch.value.trim();
         if (!query) return;
+
+        // Curated presets first, matching the rule the voice path already uses
+        // (gevActions.js): a query that names a preset POI or row flies to its
+        // hand-tuned camera pose instead of generic geocode framing. It also
+        // works with NO Google Maps key — searchAndFlyTo throws without one,
+        // which otherwise leaves typed search inert on a keyless install.
+        //
+        // Resolved BEFORE _beginDeferredNavigation because the click handlers
+        // delegated to below open their own navigation through
+        // _flyWithTransition; beginning a generation here too would leave the
+        // second one looking stale to the guards.
+        const poiMatch = findPoiByName(query);
+        const presetMatch = poiMatch ? null : findPresetLocationByName(query);
+        if (poiMatch || presetMatch) {
+          if (poiMatch) {
+            if (this._expandedCityId !== poiMatch.cityId) this._expandPOIRow(poiMatch.cityId);
+            this._onPoiClick(poiMatch.cityId, poiMatch.index);
+          } else {
+            // Clicking an already-open city's pill COLLAPSES its POI row. A
+            // search naming that city must fly there instead, so drop the
+            // expansion first and let the ordinary click path run unchanged —
+            // its signature is asserted verbatim by cockpitMarkup.test.mjs.
+            if (this._expandedCityId === presetMatch.cityId) this._collapsePOIRow();
+            this._onCityPillClick(presetMatch.cityId);
+          }
+          this._dismissLocationSearchInput();
+          return;
+        }
+
         const generation = this._beginDeferredNavigation('location');
         if (generation === false) {
           this._locationSearch.classList.remove('searching');

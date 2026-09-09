@@ -9,6 +9,9 @@ import fs from 'node:fs';
 import * as Cesium from 'cesium';
 import {
   CANCELLED_SEARCH,
+  CITY_POIS,
+  findPoiByName,
+  findPresetLocationByName,
   placeFramingViewport,
   PLACE_VIEWPORT_MAX_SPAN_KM,
   PLACE_ANCHOR_OFFSET_RATIO,
@@ -596,4 +599,46 @@ test('search without an authority hook preserves the existing caller contract', 
   const result = await runSearch(viewer, {});
   assert.equal(result.navigationMode, 'city-overview');
   assert.equal(viewer.flights.length, 1);
+});
+
+
+test('findPresetLocationByName resolves city rows, keys and aliases', () => {
+  assert.deepEqual(findPresetLocationByName('Chennai'), { cityId: 'chennai' });
+  assert.deepEqual(findPresetLocationByName('take me to chennai'), { cityId: 'chennai' });
+  // Bare object key reaches a row whose display name differs.
+  assert.deepEqual(findPresetLocationByName('delhi'), { cityId: 'delhi' });
+  assert.deepEqual(findPresetLocationByName('New Delhi'), { cityId: 'delhi' });
+  // Historic names people still type.
+  assert.deepEqual(findPresetLocationByName('madras'), { cityId: 'chennai' });
+  assert.deepEqual(findPresetLocationByName('bombay'), { cityId: 'mumbai' });
+  assert.deepEqual(findPresetLocationByName('bangalore'), { cityId: 'bengaluru' });
+  assert.deepEqual(findPresetLocationByName('peking'), { cityId: 'beijing' });
+  // Maritime rows are reachable the same way.
+  assert.deepEqual(findPresetLocationByName('indian ocean'), { cityId: 'indianOcean' });
+});
+
+test('findPresetLocationByName declines what it cannot resolve', () => {
+  assert.equal(findPresetLocationByName('Reykjavik'), null);
+  assert.equal(findPresetLocationByName(''), null);
+  assert.equal(findPresetLocationByName('   '), null);
+  assert.equal(findPresetLocationByName(null), null);
+  // Stopwords alone carry no signal.
+  assert.equal(findPresetLocationByName('the of a'), null);
+});
+
+test('a POI name beats the row containing it, so callers try POIs first', () => {
+  // Both would match "chennai port"; findPoiByName is the more specific answer
+  // and ui.js/gevActions.js consult it before findPresetLocationByName.
+  assert.deepEqual(findPoiByName('chennai port'), { cityId: 'chennai', index: 4 });
+  assert.deepEqual(findPresetLocationByName('chennai port'), { cityId: 'chennai' });
+});
+
+test('every Chennai POI is inside the Chennai view bounds', () => {
+  const city = CITY_POIS.chennai;
+  for (const poi of city.pois) {
+    assert.ok(poi.lat >= city.viewBounds.southwest.lat && poi.lat <= city.viewBounds.northeast.lat,
+      `${poi.name} latitude outside Chennai bounds`);
+    assert.ok(poi.lon >= city.viewBounds.southwest.lng && poi.lon <= city.viewBounds.northeast.lng,
+      `${poi.name} longitude outside Chennai bounds`);
+  }
 });

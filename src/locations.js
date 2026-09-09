@@ -65,6 +65,7 @@ export const CITY_POIS = {
   },
   mumbai: {
     name: 'Mumbai',
+    aliases: ['Bombay'],
     groundElevation: 11,
     viewBounds: { southwest: { lat: 18.89, lng: 72.77 }, northeast: { lat: 19.27, lng: 72.99 } },
     pois: [
@@ -77,6 +78,7 @@ export const CITY_POIS = {
   },
   bengaluru: {
     name: 'Bengaluru',
+    aliases: ['Bangalore'],
     groundElevation: 920,
     viewBounds: { southwest: { lat: 12.83, lng: 77.46 }, northeast: { lat: 13.15, lng: 77.78 } },
     pois: [
@@ -85,6 +87,19 @@ export const CITY_POIS = {
       { name: 'UB City', lat: 12.9719, lon: 77.5960, alt: 700, pitch: -22, heading: 45, buildingHeight: 120 },
       { name: 'Lalbagh Glass House', lat: 12.9507, lon: 77.5848, alt: 500, pitch: -30, heading: 180, buildingHeight: 25 },
       { name: 'Kempegowda International Airport', lat: 13.1986, lon: 77.7066, alt: 2200, pitch: -25, heading: 0, buildingHeight: 30 },
+    ],
+  },
+  chennai: {
+    name: 'Chennai',
+    aliases: ['Madras'],
+    groundElevation: 7,
+    viewBounds: { southwest: { lat: 12.90, lng: 80.15 }, northeast: { lat: 13.25, lng: 80.35 } },
+    pois: [
+      { name: 'Marina Beach', lat: 13.0500, lon: 80.2824, alt: 1800, pitch: -20, heading: 0, buildingHeight: 5 },
+      { name: 'Kapaleeshwarar Temple', lat: 13.0337, lon: 80.2698, alt: 500, pitch: -30, heading: 45, buildingHeight: 40 },
+      { name: 'Fort St George', lat: 13.0797, lon: 80.2870, alt: 700, pitch: -28, heading: 90, buildingHeight: 25 },
+      { name: 'Chennai Central', lat: 13.0827, lon: 80.2757, alt: 600, pitch: -25, heading: 180, buildingHeight: 40 },
+      { name: 'Chennai Port', lat: 13.1000, lon: 80.3000, alt: 2000, pitch: -25, heading: 270, buildingHeight: 20 },
     ],
   },
   islamabad: {
@@ -125,6 +140,7 @@ export const CITY_POIS = {
   },
   beijing: {
     name: 'Beijing',
+    aliases: ['Peking'],
     groundElevation: 44,
     viewBounds: { southwest: { lat: 39.75, lng: 116.15 }, northeast: { lat: 40.10, lng: 116.65 } },
     pois: [
@@ -473,6 +489,55 @@ export function findPoiByName(query) {
     });
   }
   return best ? { cityId: best.cityId, index: best.index } : null;
+}
+
+/**
+ * Search index for preset ROWS (as opposed to the POIs inside them).
+ *
+ * Each row contributes its display name plus any aliases, tokenized the same
+ * way POI names are, and its object key as a single bare token — which is what
+ * lets "delhi" reach the row named "New Delhi".
+ */
+const PRESET_SEARCH_INDEX = Object.entries(CITY_POIS).map(([id, city]) => ({
+  id,
+  key: id.toLowerCase(),
+  candidates: [poiNameTokens(city.name), ...(city.aliases || []).map(poiNameTokens)]
+    .filter((tokens) => tokens.size > 0),
+}));
+
+/**
+ * Resolve a query to a preset ROW, so typed search can reach a curated preset
+ * without going through the geocoder.
+ *
+ * This exists because `searchAndFlyTo` throws without a Google Maps key, which
+ * left typed search dead on a keyless install — even for a landmark the app
+ * ships a hand-tuned camera pose for. Callers try `findPoiByName` first (a POI
+ * is more specific than the city containing it), then this.
+ *
+ * Matching is the same order-free word-set CONTAINMENT `findPoiByName` uses:
+ * every word of the row's name must appear in the query, so "fly me to
+ * chennai" matches Chennai and extra words are harmless. Longest match wins,
+ * which keeps a two-word name from losing to a one-word key hit elsewhere.
+ *
+ * Unlike POI names, a single-word row name is allowed to match — a city name is
+ * specific enough on its own, which is the whole point of typing "Chennai".
+ *
+ * @param {string} query
+ * @returns {{cityId: string}|null}
+ */
+export function findPresetLocationByName(query) {
+  const q = poiNameTokens(query);
+  if (q.size === 0) return null;
+  let best = null;
+  for (const entry of PRESET_SEARCH_INDEX) {
+    for (const candidate of entry.candidates) {
+      if ([...candidate].every((word) => q.has(word)) && (!best || candidate.size > best.size)) {
+        best = { cityId: entry.id, size: candidate.size };
+      }
+    }
+    if (!best && q.has(entry.key)) best = { cityId: entry.id, size: 1 };
+  }
+  return best ? { cityId: best.cityId } : null;
 }
 
 /** Distinguishes an authority veto from a genuine not-found result. */
