@@ -1,10 +1,21 @@
 import * as Cesium from 'cesium';
+import { DEFAULT_FOCUS } from './regionFocus.js';
 
 /**
  * Camera presets for notable locations.
- * Phase 1 default: fly to Austin, TX on load.
+ * This build opens on the Indian Ocean theatre's default focus — see
+ * `DEFAULT_FOCUS` in `regionFocus.js`, which is also what `flyToRegionHome`
+ * reads, so the two cannot disagree.
  */
 export const CAMERA_PRESETS = {
+  delhi: {
+    destination: Cesium.Cartesian3.fromDegrees(DEFAULT_FOCUS.lon, DEFAULT_FOCUS.lat, DEFAULT_FOCUS.approachM),
+    orientation: {
+      heading: Cesium.Math.toRadians(DEFAULT_FOCUS.headingDeg),
+      pitch: Cesium.Math.toRadians(DEFAULT_FOCUS.pitchDeg),
+      roll: 0.0,
+    },
+  },
   austin: {
     destination: Cesium.Cartesian3.fromDegrees(-97.7431, 30.2672, 800),
     orientation: {
@@ -47,12 +58,16 @@ export function flyToPreset(viewer, presetName, duration = 3.0) {
 }
 
 /**
- * Set camera to Austin on load with a cinematic fly-in.
+ * Open on the region's default focus with the cinematic fly-in: snap to a high
+ * establishing altitude looking straight down, then descend into an oblique
+ * view. The pause before the descent is what lets the first tiles arrive, so
+ * the fly-in starts over imagery instead of over a grey ellipsoid.
  */
-export function flyToAustin(viewer) {
-  // Start from a high altitude, then fly down
+export function flyToRegionHome(viewer) {
+  const { lat, lon, heightM, approachM, headingDeg, pitchDeg } = DEFAULT_FOCUS;
+
   viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(-97.7431, 30.2672, 25000),
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, heightM),
     orientation: {
       heading: Cesium.Math.toRadians(0),
       pitch: Cesium.Math.toRadians(-90),
@@ -60,13 +75,12 @@ export function flyToAustin(viewer) {
     },
   });
 
-  // Cinematic fly-in after a brief pause
   setTimeout(() => {
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(-97.7431, 30.2672, 600),
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, approachM),
       orientation: {
-        heading: Cesium.Math.toRadians(15),
-        pitch: Cesium.Math.toRadians(-30),
+        heading: Cesium.Math.toRadians(headingDeg),
+        pitch: Cesium.Math.toRadians(pitchDeg),
         roll: 0.0,
       },
       duration: 4.0,

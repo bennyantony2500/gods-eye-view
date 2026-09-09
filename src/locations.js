@@ -1,5 +1,40 @@
 import * as Cesium from 'cesium';
 import { viewportBias, placesNearViewRecovery } from './annotations/annotationResolver.js';
+import { INDIAN_OCEAN_BOUNDS, waypointsOfKind } from './regionFocus.js';
+
+/**
+ * Build a maritime preset row from the region's waypoints of one kind.
+ *
+ * The location bar was written for cities, and open water fits it with two
+ * substitutions: `groundElevation` is sea level, and `buildingHeight` is zero
+ * because nothing stands up to frame — the POI's `alt` (camera RANGE, per the
+ * field reference below) is what pulls the view back far enough to read a
+ * strait. Names and coordinates stay in `regionFocus.js` so the bounds, the
+ * feeds and these presets cannot drift apart.
+ *
+ * @param {string} name Row label in the location bar.
+ * @param {'chokepoint'|'port'} kind
+ * @param {{south: number, west: number, north: number, east: number}} bounds Overview extent.
+ */
+function maritimePreset(name, kind, bounds) {
+  return {
+    name,
+    groundElevation: 0,
+    viewBounds: {
+      southwest: { lat: bounds.south, lng: bounds.west },
+      northeast: { lat: bounds.north, lng: bounds.east },
+    },
+    pois: waypointsOfKind(kind).map((point) => ({
+      name: point.name,
+      lat: point.lat,
+      lon: point.lon,
+      alt: point.rangeM,
+      pitch: point.pitchDeg,
+      heading: 0,
+      buildingHeight: 0,
+    })),
+  };
+}
 
 /**
  * Points of Interest per city.
@@ -12,6 +47,108 @@ import { viewportBias, placesNearViewRecovery } from './annotations/annotationRe
  *   buildingHeight — estimated height of landmark center above ground (meters)
  */
 export const CITY_POIS = {
+  // --- Indian Ocean theatre -------------------------------------------------
+  // This build's area of interest leads the list: India, Pakistan, Afghanistan
+  // and China, then the ocean itself. The upstream city presets follow below
+  // and still work — the region is a focus, not a geofence (see regionFocus.js).
+  delhi: {
+    name: 'New Delhi',
+    groundElevation: 216,
+    viewBounds: { southwest: { lat: 28.40, lng: 76.84 }, northeast: { lat: 28.88, lng: 77.35 } },
+    pois: [
+      { name: 'India Gate', lat: 28.6129, lon: 77.2295, alt: 700, pitch: -25, heading: 90, buildingHeight: 42 },
+      { name: 'Rashtrapati Bhavan', lat: 28.6143, lon: 77.1994, alt: 800, pitch: -28, heading: 270, buildingHeight: 55 },
+      { name: 'Qutub Minar', lat: 28.5245, lon: 77.1855, alt: 500, pitch: -22, heading: 45, buildingHeight: 73 },
+      { name: 'Humayuns Tomb', lat: 28.5933, lon: 77.2507, alt: 600, pitch: -30, heading: 180, buildingHeight: 47 },
+      { name: 'Lotus Temple', lat: 28.5535, lon: 77.2588, alt: 550, pitch: -28, heading: 315, buildingHeight: 34 },
+    ],
+  },
+  mumbai: {
+    name: 'Mumbai',
+    groundElevation: 11,
+    viewBounds: { southwest: { lat: 18.89, lng: 72.77 }, northeast: { lat: 19.27, lng: 72.99 } },
+    pois: [
+      { name: 'Gateway of India', lat: 18.9220, lon: 72.8347, alt: 500, pitch: -25, heading: 90, buildingHeight: 26 },
+      { name: 'Bandra Worli Sea Link', lat: 19.0300, lon: 72.8180, alt: 1600, pitch: -22, heading: 180, buildingHeight: 128 },
+      { name: 'Chhatrapati Shivaji Terminus', lat: 18.9398, lon: 72.8355, alt: 600, pitch: -28, heading: 45, buildingHeight: 45 },
+      { name: 'Marine Drive', lat: 18.9433, lon: 72.8232, alt: 1800, pitch: -20, heading: 0, buildingHeight: 20 },
+      { name: 'Haji Ali Dargah', lat: 18.9827, lon: 72.8090, alt: 550, pitch: -30, heading: 135, buildingHeight: 26 },
+    ],
+  },
+  bengaluru: {
+    name: 'Bengaluru',
+    groundElevation: 920,
+    viewBounds: { southwest: { lat: 12.83, lng: 77.46 }, northeast: { lat: 13.15, lng: 77.78 } },
+    pois: [
+      { name: 'Vidhana Soudha', lat: 12.9794, lon: 77.5912, alt: 600, pitch: -25, heading: 0, buildingHeight: 46 },
+      { name: 'Bangalore Palace', lat: 12.9987, lon: 77.5921, alt: 500, pitch: -28, heading: 90, buildingHeight: 30 },
+      { name: 'UB City', lat: 12.9719, lon: 77.5960, alt: 700, pitch: -22, heading: 45, buildingHeight: 120 },
+      { name: 'Lalbagh Glass House', lat: 12.9507, lon: 77.5848, alt: 500, pitch: -30, heading: 180, buildingHeight: 25 },
+      { name: 'Kempegowda International Airport', lat: 13.1986, lon: 77.7066, alt: 2200, pitch: -25, heading: 0, buildingHeight: 30 },
+    ],
+  },
+  islamabad: {
+    name: 'Islamabad',
+    groundElevation: 540,
+    viewBounds: { southwest: { lat: 33.60, lng: 72.90 }, northeast: { lat: 33.80, lng: 73.20 } },
+    pois: [
+      { name: 'Faisal Mosque', lat: 33.7295, lon: 73.0372, alt: 700, pitch: -25, heading: 180, buildingHeight: 40 },
+      { name: 'Pakistan Monument', lat: 33.6935, lon: 73.0688, alt: 500, pitch: -30, heading: 45, buildingHeight: 25 },
+      { name: 'Parliament House', lat: 33.7222, lon: 73.0793, alt: 600, pitch: -28, heading: 270, buildingHeight: 30 },
+      { name: 'Daman e Koh', lat: 33.7395, lon: 73.0555, alt: 900, pitch: -20, heading: 180, buildingHeight: 20 },
+      { name: 'Rawal Lake', lat: 33.6989, lon: 73.1300, alt: 1500, pitch: -25, heading: 90, buildingHeight: 5 },
+    ],
+  },
+  karachi: {
+    name: 'Karachi',
+    groundElevation: 8,
+    viewBounds: { southwest: { lat: 24.75, lng: 66.90 }, northeast: { lat: 25.05, lng: 67.25 } },
+    pois: [
+      { name: 'Mazar e Quaid', lat: 24.8752, lon: 67.0402, alt: 600, pitch: -28, heading: 0, buildingHeight: 43 },
+      { name: 'Frere Hall', lat: 24.8479, lon: 67.0329, alt: 500, pitch: -30, heading: 90, buildingHeight: 25 },
+      { name: 'Clifton Beach', lat: 24.8091, lon: 67.0295, alt: 1600, pitch: -22, heading: 180, buildingHeight: 5 },
+      { name: 'Karachi Port', lat: 24.8467, lon: 66.9750, alt: 2000, pitch: -25, heading: 270, buildingHeight: 20 },
+      { name: 'Jinnah International Airport', lat: 24.9065, lon: 67.1608, alt: 2200, pitch: -25, heading: 0, buildingHeight: 25 },
+    ],
+  },
+  kabul: {
+    name: 'Kabul',
+    groundElevation: 1790,
+    viewBounds: { southwest: { lat: 34.40, lng: 69.03 }, northeast: { lat: 34.62, lng: 69.32 } },
+    pois: [
+      { name: 'Darul Aman Palace', lat: 34.4680, lon: 69.1230, alt: 600, pitch: -28, heading: 45, buildingHeight: 30 },
+      { name: 'Bagh e Babur', lat: 34.5033, lon: 69.1567, alt: 700, pitch: -25, heading: 90, buildingHeight: 15 },
+      { name: 'Id Gah Mosque', lat: 34.5220, lon: 69.1880, alt: 500, pitch: -30, heading: 180, buildingHeight: 22 },
+      { name: 'Koh e Asamai', lat: 34.5142, lon: 69.1585, alt: 1200, pitch: -20, heading: 270, buildingHeight: 40 },
+      { name: 'Hamid Karzai International Airport', lat: 34.5658, lon: 69.2123, alt: 2200, pitch: -25, heading: 0, buildingHeight: 25 },
+    ],
+  },
+  beijing: {
+    name: 'Beijing',
+    groundElevation: 44,
+    viewBounds: { southwest: { lat: 39.75, lng: 116.15 }, northeast: { lat: 40.10, lng: 116.65 } },
+    pois: [
+      { name: 'Forbidden City', lat: 39.9163, lon: 116.3972, alt: 1600, pitch: -30, heading: 180, buildingHeight: 20 },
+      { name: 'Tiananmen Square', lat: 39.9055, lon: 116.3976, alt: 1800, pitch: -25, heading: 0, buildingHeight: 10 },
+      { name: 'Temple of Heaven', lat: 39.8822, lon: 116.4066, alt: 800, pitch: -28, heading: 0, buildingHeight: 38 },
+      { name: 'CITIC Tower', lat: 39.9110, lon: 116.4610, alt: 1000, pitch: -20, heading: 225, buildingHeight: 250 },
+      { name: 'National Stadium', lat: 39.9928, lon: 116.3964, alt: 800, pitch: -28, heading: 135, buildingHeight: 35 },
+    ],
+  },
+  shanghai: {
+    name: 'Shanghai',
+    groundElevation: 4,
+    viewBounds: { southwest: { lat: 31.10, lng: 121.35 }, northeast: { lat: 31.38, lng: 121.65 } },
+    pois: [
+      { name: 'Shanghai Tower', lat: 31.2336, lon: 121.5055, alt: 1400, pitch: -18, heading: 270, buildingHeight: 300 },
+      { name: 'Oriental Pearl Tower', lat: 31.2397, lon: 121.4998, alt: 900, pitch: -20, heading: 225, buildingHeight: 230 },
+      { name: 'Bund Waterfront', lat: 31.2400, lon: 121.4900, alt: 1600, pitch: -22, heading: 90, buildingHeight: 25 },
+      { name: 'Yu Garden', lat: 31.2270, lon: 121.4920, alt: 500, pitch: -32, heading: 0, buildingHeight: 12 },
+      { name: 'Nanpu Bridge', lat: 31.2016, lon: 121.4931, alt: 1200, pitch: -25, heading: 315, buildingHeight: 46 },
+    ],
+  },
+  indianOcean: maritimePreset('Indian Ocean', 'chokepoint', INDIAN_OCEAN_BOUNDS),
+  indianOceanPorts: maritimePreset('Theatre Ports', 'port', INDIAN_OCEAN_BOUNDS),
   austin: {
     name: 'Austin',
     groundElevation: 150, // meters above WGS84 ellipsoid

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { selectMapStartupRoute } from '../src/mapStartup.js';
+import { isRegionFocusEnabled, regionSummary } from '../src/regionFocus.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -181,6 +182,21 @@ function symbol(level) {
   return 'ERROR';
 }
 
+/**
+ * One line describing what this build points at.
+ *
+ * Read straight from `regionFocus.js` rather than from the report object, so
+ * the region needs no slot in the report shape and every existing caller of
+ * `formatSetupReport` keeps working unchanged.
+ */
+function regionLine(env = process.env) {
+  if (!isRegionFocusEnabled(env)) {
+    return 'off — worldwide feeds (GEV_REGION_FOCUS)';
+  }
+  const summary = regionSummary();
+  return `${summary.label} — ${summary.countries.join(', ')} + entire Indian Ocean`;
+}
+
 export function formatSetupReport(report, { readyMessage } = {}) {
   const hasKeychainSource = Object.values(report.credentials || {})
     .some((credential) => credential?.source === 'macOS Keychain');
@@ -201,6 +217,7 @@ export function formatSetupReport(report, { readyMessage } = {}) {
     `Fires:   ${report.capabilities.fires}`,
     `Traffic: ${report.capabilities.traffic}`,
     `Missions: ${report.capabilities.missions}`,
+    `Region:  ${regionLine()}`,
     '',
     'Configured providers:',
     ...CREDENTIALS.map((spec) => {

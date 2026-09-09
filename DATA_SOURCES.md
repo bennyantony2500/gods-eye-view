@@ -38,6 +38,20 @@ How to read this:
 | **Radio Browser** | Geolocated internet-radio station directory and station-level tags | Public-domain directory data under PDDL 1.0; individual broadcaster stream terms apply | "Radio Browser" plus a link to the selected broadcaster |
 | **Re:Earth Terrain** (Mapterhorn) | Terrain (keyless globe stacks — OSM etc. — + `/api/terrain/heights` ellipsoidal-height lookups) | Terrain mesh: CC BY 4.0; geoid: EGM2008 (NGA, public domain) | "Terrain (keyless globe stacks): Re:Earth Terrain / Mapterhorn (CC BY 4.0) / EGM2008 (NGA)" |
 
+### Region focus (this build)
+
+This build is bounded to the Indian Ocean theatre — India, Pakistan, Afghanistan
+and China on land, the entire Indian Ocean at sea. Three of the sources above are
+queried regionally rather than worldwide: **OpenSky** gains a bbox, **NASA FIRMS**
+swaps `world` for the theatre's `west,south,east,north`, and **AISStream**
+subscribes to the theatre box. Licensing and attribution are unaffected — the
+same providers on the same terms, asked for a smaller area. `GEV_REGION_FOCUS=off`
+restores the worldwide queries. See [REGION.md](REGION.md).
+
+No public traffic-camera catalog for these four countries is wired into the CCTV
+proxy; `config/cctv_sources.indian-ocean.json` carries real camera poses with
+PLACEHOLDER demo video, and every entry's `license` field says so.
+
 ### Notes on the live sources
 
 - **Google Maps Platform.** You supply your own API key and are bound by [Google's ToS](https://cloud.google.com/maps-platform/terms). Google Maps Content (tiles, geocodes, places) **may not be cached, stored, rehosted, or committed** — this app only ever uses it live, which is the compliant pattern. The "Google" attribution is displayed on the globe and must stay visible. Restrict your key (see [SECURITY.md](SECURITY.md)).

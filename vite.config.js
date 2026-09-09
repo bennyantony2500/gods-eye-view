@@ -19,6 +19,10 @@
  *  14. Rocket launches — recent Launch Library 2 mission metadata
  *  15. Radio Browser — public-domain station directory and click counting
  *
+ * The OpenSky (1), AIS live (7) and NASA FIRMS (10) proxies are bounded to this
+ * build's area of interest — see `src/regionFocus.js`. Set `GEV_REGION_FOCUS=off`
+ * to restore the upstream worldwide queries.
+ *
  * Also exposes Cesium and Google 3D Tiles API keys to the
  * client via `import.meta.env.*` defines.
  *
@@ -56,6 +60,12 @@ import { normalizeAdsbLolPointResponse } from './src/data/adsbLolFallback.js';
 import { createAisStreamAdapter, isRecognizedAisEnvelope } from './src/data/aisStreamAdapter.js';
 import { parseSilenceTimeoutEnv } from './src/data/aisWatchdog.js';
 import { keylessHudSummaryResponse } from './src/hudSummaryResponse.js';
+import {
+  aisBoundingBoxes,
+  firmsAreaParam,
+  isRegionFocusEnabled,
+  openSkyBboxQuery,
+} from './src/regionFocus.js';
 import { parseEnv as parseDotenvText } from 'node:util';
 import { readEnvironmentSource as readPinokioEnvironmentSource } from './scripts/pinokio-environment.mjs';
 import {
@@ -113,6 +123,21 @@ const DEV_FRESH_EXTERNAL_KEYS_AT_BOOT = new Set(
 );
 
 // ---------------------------------------------------------------------------
+/**
+ * OpenSky `/states/all` URL for the air picture.
+ *
+ * Regionally bounded by default: OpenSky prices a call by the area requested,
+ * so a bbox is never more expensive than the worldwide call, and the regional
+ * snapshot is a fraction of the payload to transfer, parse and render. The box
+ * is still large, though — do not expect the cheapest credit tier. Shrink
+ * `FLIGHT_FOCUS_BOUNDS` if credits matter more than coverage, or set
+ * `GEV_REGION_FOCUS=off` for the stock worldwide query.
+ */
+function openSkyStatesUrl() {
+  const base = 'https://opensky-network.org/api/states/all?extended=1';
+  return isRegionFocusEnabled(process.env) ? `${base}&${openSkyBboxQuery()}` : base;
+}
+
 // OpenSky OAuth2 token + response cache state
 // ---------------------------------------------------------------------------
 /** @type {string|null} Current OAuth2 bearer token. */
@@ -1336,7 +1361,19 @@ const GBFS_ALLOWED_HOSTS = new Set([
 // AISStream live vessel cache state
 // ---------------------------------------------------------------------------
 const AISSTREAM_URL = 'wss://stream.aisstream.io/v0/stream';
-const AISSTREAM_DEFAULT_BBOXES = [[[-90, -180], [90, 180]]];
+const AISSTREAM_GLOBAL_BBOXES = [[[-90, -180], [90, 180]]];
+/**
+ * Default AIS subscription boxes: the whole Indian Ocean plus the land focus.
+ *
+ * Read at subscribe time, not at module load, because the Pinokio/dotenv
+ * environment is merged into `process.env` after this file is imported.
+ * `AISSTREAM_BOUNDING_BOXES` still overrides it — use that to subscribe to
+ * single basins when the whole-ocean firehose is more vessels than the render
+ * budget wants.
+ */
+function aisStreamDefaultBboxes() {
+  return isRegionFocusEnabled(process.env) ? aisBoundingBoxes() : AISSTREAM_GLOBAL_BBOXES;
+}
 const AISSTREAM_DEFAULT_MESSAGE_TYPES = [
   'PositionReport',
   'StandardClassBPositionReport',
@@ -2008,7 +2045,9 @@ function tomtomProxy() {
 
 /**
  * NASA FIRMS live active-fire proxy with a memory + disk cache.
- * Upstream: https://firms.modaps.eosdis.nasa.gov/api/area/csv/{KEY}/{SOURCE}/world/2
+ * Upstream: https://firms.modaps.eosdis.nasa.gov/api/area/csv/{KEY}/{SOURCE}/{AREA}/2
+ * where {AREA} is the region's west,south,east,north box, or `world` when
+ * region focus is off.
  *
  * Merges three VIIRS NRT sources (NOAA-20, NOAA-21, Suomi-NPP — independent
  * satellites, no cross-source dedup) fetched sequentially with `days=2`
@@ -2073,7 +2112,10 @@ function firmsProxy() {
    * it embeds the MAP_KEY.
    */
   async function fetchSource(key, source) {
-    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/${source}/world/2`;
+    // FIRMS takes the area as a bare `west,south,east,north` path segment — the
+    // commas must stay literal, so this segment is deliberately not encoded.
+    const area = isRegionFocusEnabled(process.env) ? firmsAreaParam() : 'world';
+    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/${source}/${area}/2`;
     const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const records = parseFirmsCsv(await res.text());
@@ -3109,7 +3151,7 @@ function openSkyProxy() {
             }
           }
 
-          let upstream = await fetch('https://opensky-network.org/api/states/all?extended=1', { headers });
+          let upstream = await fetch(openSkyStatesUrl(), { headers });
           // Auto-mode fallback: if OAuth was rejected, retry with Basic credentials
           if (
             (upstream.status === 401 || upstream.status === 403) &&
@@ -3121,7 +3163,7 @@ function openSkyProxy() {
               Accept: 'application/json',
               Authorization: `Basic ${Buffer.from(`${basicUser}:${basicPass}`).toString('base64')}`,
             };
-            upstream = await fetch('https://opensky-network.org/api/states/all?extended=1', { headers: retryHeaders });
+            upstream = await fetch(openSkyStatesUrl(), { headers: retryHeaders });
             usedMode = 'basic';
             reason = 'oauth_rejected_fallback_basic';
           }
@@ -6319,10 +6361,18 @@ function aisWebSocketImpl() {
  * silently ignored every .env value, including its own kill switch.
  *
  * A custom subscription (one harbor, one message type) can be legitimately
- * silent for minutes, so the silence watch only self-arms for the default
- * worldwide subscription. An operator with a narrow filter opts back in by
- * setting AISSTREAM_SILENCE_TIMEOUT_MS to a value sized for that filter; 0 is
- * an explicit kill switch.
+ * silent for minutes, so the silence watch only self-arms for the BUILT-IN
+ * subscription — which this build narrows from worldwide to the Indian Ocean
+ * theatre (`aisStreamDefaultBboxes`). Self-arming stays sound at that width:
+ * the theatre carries Hormuz, Bab-el-Mandeb and Malacca, so two minutes of
+ * total silence across it is a broken feed, not a quiet patch of sea. Narrow
+ * it to a single basin and the reasoning no longer holds — but doing that
+ * means setting AISSTREAM_BOUNDING_BOXES, which is exactly what makes the
+ * subscription `custom` below and disarms the watch.
+ *
+ * An operator with a narrow filter opts back in by setting
+ * AISSTREAM_SILENCE_TIMEOUT_MS to a value sized for that filter; 0 is an
+ * explicit kill switch.
  */
 function aisWatchdogPolicy() {
   if (_aisWatchdogPolicy) return _aisWatchdogPolicy;
@@ -6472,7 +6522,7 @@ function disposeAisStream() {
 function aisStreamSubscription() {
   return {
     APIKey: process.env.AISSTREAM_API_KEY,
-    BoundingBoxes: parseJsonEnv('AISSTREAM_BOUNDING_BOXES', AISSTREAM_DEFAULT_BBOXES),
+    BoundingBoxes: parseJsonEnv('AISSTREAM_BOUNDING_BOXES', aisStreamDefaultBboxes()),
     FilterMessageTypes: parseCsvOrJsonEnv('AISSTREAM_MESSAGE_TYPES', AISSTREAM_DEFAULT_MESSAGE_TYPES),
   };
 }

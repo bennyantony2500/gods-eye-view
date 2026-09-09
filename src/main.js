@@ -1,6 +1,6 @@
 import * as Cesium from 'cesium';
 import { StyleManager } from './ui.js';
-import { flyToAustin } from './camera.js';
+import { flyToRegionHome } from './camera.js';
 import { DataLayerManager } from './data/manager.js';
 import flightsLayer from './data/flights.js';
 import militaryFlightsLayer from './data/militaryFlights.js';
@@ -198,7 +198,7 @@ async function init() {
     // If no share link state, do default fly-to Austin
     if (!styleManager.hasShareState) {
       loaderStatus.textContent = 'Flying to Austin, TX...';
-      flyToAustin(viewer);
+      flyToRegionHome(viewer);
     } else {
       loaderStatus.textContent = 'Restoring shared view...';
     }
